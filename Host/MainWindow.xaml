@@ -19,6 +19,8 @@
             <TextBox x:Name="BindIpBox" Width="140" Margin="8,0,16,0" Text="0.0.0.0"/>
             <TextBlock Text="Port:" VerticalAlignment="Center"/>
             <TextBox x:Name="PortBox" Width="80" Margin="8,0,16,0" Text="50123"/>
+            <TextBlock Text="Ruby Port:" VerticalAlignment="Center"/>
+            <TextBox x:Name="RubyPortBox" Width="80" Margin="8,0,16,0" Text="50124"/>
             <Button x:Name="StartButton" Content="Start" Padding="12,4" Margin="0,0,8,0" Click="StartButton_Click"/>
             <Button x:Name="StopButton" Content="Stop" Padding="12,4" IsEnabled="False" Click="StopButton_Click"/>
         </StackPanel>

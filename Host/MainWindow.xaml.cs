@@ -21,6 +21,11 @@ public partial class MainWindow : Window
 
     private CancellationTokenSource? _cts;
     private TcpHostServer? _server;
+    private RubyBridgeUdp? _rubyBridge;
+    private Timer? _rubyTimer;
+
+    private static readonly TimeSpan RubyInterval = TimeSpan.FromMilliseconds(16);
+    private static readonly TimeSpan RubyStaleTimeout = TimeSpan.FromMilliseconds(500);
 
     public MainWindow()
     {
@@ -50,13 +55,22 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!int.TryParse(RubyPortBox.Text.Trim(), out var rubyPort) || rubyPort < 1 || rubyPort > 65535)
+        {
+            MessageBox.Show(this, "Invalid Ruby port number.", "Host", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         _server = new TcpHostServer(bindIp, port);
         _server.Start();
+
+        _rubyBridge = new RubyBridgeUdp(rubyPort);
+        _rubyTimer = new Timer(_ => SendRubySnapshot(), null, RubyInterval, RubyInterval);
 
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => _server.AcceptLoopAsync(_cts.Token));
 
-        StatusText.Text = $"Status: running on {bindIp}:{port}";
+        StatusText.Text = $"Status: running on {bindIp}:{port} -> Ruby 127.0.0.1:{rubyPort}";
         StartButton.IsEnabled = false;
         StopButton.IsEnabled = true;
         _timer.Start();
@@ -82,6 +96,10 @@ public partial class MainWindow : Window
     private void StopServer()
     {
         _timer.Stop();
+        _rubyTimer?.Dispose();
+        _rubyTimer = null;
+        _rubyBridge?.Dispose();
+        _rubyBridge = null;
         _cts?.Cancel();
         _cts = null;
 
@@ -124,6 +142,26 @@ public partial class MainWindow : Window
                 _players.RemoveAt(i);
                 _rowsByPid.Remove(row.Pid);
             }
+        }
+    }
+
+    private void SendRubySnapshot()
+    {
+        var server = _server;
+        var bridge = _rubyBridge;
+        if (server == null || bridge == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var snapshot = server.SnapshotPlayers();
+            bridge.SendSnapshot(snapshot, RubyStaleTimeout);
+        }
+        catch (Exception)
+        {
+            // ignore errors to keep host running
         }
     }
 
