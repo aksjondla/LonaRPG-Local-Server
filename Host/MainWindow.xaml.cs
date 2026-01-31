@@ -21,7 +21,7 @@ public partial class MainWindow : Window
 
     private CancellationTokenSource? _cts;
     private TcpHostServer? _server;
-    private RubyBridgeUdp? _rubyBridge;
+    private RubyBridgePipe? _rubyBridge;
     private Timer? _rubyTimer;
 
     private static readonly TimeSpan RubyInterval = TimeSpan.FromMilliseconds(16);
@@ -55,22 +55,23 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!int.TryParse(RubyPortBox.Text.Trim(), out var rubyPort) || rubyPort < 1 || rubyPort > 65535)
+        string pipeName = PipeNameBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(pipeName))
         {
-            MessageBox.Show(this, "Invalid Ruby port number.", "Host", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Invalid pipe name.", "Host", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         _server = new TcpHostServer(bindIp, port);
         _server.Start();
 
-        _rubyBridge = new RubyBridgeUdp(rubyPort);
+        _rubyBridge = new RubyBridgePipe(pipeName);
         _rubyTimer = new Timer(_ => SendRubySnapshot(), null, RubyInterval, RubyInterval);
 
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => _server.AcceptLoopAsync(_cts.Token));
 
-        StatusText.Text = $"Status: running on {bindIp}:{port} -> Ruby 127.0.0.1:{rubyPort}";
+        StatusText.Text = $"Status: running on {bindIp}:{port} -> Pipe \\\\.\\pipe\\{pipeName}";
         StartButton.IsEnabled = false;
         StopButton.IsEnabled = true;
         _timer.Start();
