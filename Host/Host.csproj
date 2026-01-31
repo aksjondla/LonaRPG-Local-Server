@@ -6,14 +6,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Remove="Host\**\*.cs" />
-    <Page Remove="Host\**\*.xaml" />
-    <EmbeddedResource Remove="Host\**\*" />
-    <None Remove="Host\**\*" />
-  </ItemGroup>
 
 </Project>

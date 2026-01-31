@@ -10,6 +10,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -21,15 +22,37 @@
         </StackPanel>
 
         <Border Grid.Row="1" Background="#F3F3F3" CornerRadius="6" Padding="10" Margin="0,0,0,12">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Host:" VerticalAlignment="Center"/>
+                    <TextBox x:Name="HostBox" Width="140" Margin="8,0,12,0" Text="127.0.0.1"/>
+                    <TextBlock Text="Port:" VerticalAlignment="Center"/>
+                    <TextBox x:Name="PortBox" Width="80" Margin="8,0,12,0" Text="50123"/>
+                    <TextBlock Text="Name:" VerticalAlignment="Center"/>
+                    <TextBox x:Name="NameBox" Width="140" Margin="8,0,12,0" Text="player1"/>
+                    <Button x:Name="ConnectButton" Content="Connect" Padding="12,4" Margin="0,0,8,0" Click="ConnectButton_Click"/>
+                    <Button x:Name="DisconnectButton" Content="Disconnect" Padding="12,4" IsEnabled="False" Click="DisconnectButton_Click"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <TextBlock Text="Network:" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="NetStatusText" Text="disconnected" Margin="8,0,0,0"/>
+                    <TextBlock Text="PID:" FontWeight="SemiBold" Margin="16,0,0,0"/>
+                    <TextBlock x:Name="PidText" Text="-" Margin="8,0,0,0"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="2" Background="#F3F3F3" CornerRadius="6" Padding="10" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Последнее событие:" FontWeight="SemiBold"/>
                 <TextBlock x:Name="LastEventText" Text="—" Margin="8,0,0,0"/>
             </StackPanel>
         </Border>
 
-        <ListBox x:Name="EventsList" Grid.Row="2" FontFamily="Consolas"/>
+        <ListBox x:Name="EventsList" Grid.Row="3" FontFamily="Consolas"/>
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button x:Name="ClearButton" Content="Очистить" Padding="12,6" Click="ClearButton_Click"/>
         </StackPanel>
     </Grid>
