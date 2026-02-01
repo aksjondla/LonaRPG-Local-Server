@@ -5,7 +5,8 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Host"
         mc:Ignorable="d"
-        Title="Host Server" Height="560" Width="920" MinHeight="420" MinWidth="720">
+        Title="Host Server" Height="560" Width="920" MinHeight="420" MinWidth="720"
+        Background="{StaticResource Brush.WindowBg}">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
