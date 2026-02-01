@@ -21,7 +21,8 @@
             <TextBox x:Name="PortBox" Width="80" Margin="8,0,16,0" Text="50123" IsReadOnly="True"/>
             <TextBlock Text="Pipe:" VerticalAlignment="Center"/>
             <TextBox x:Name="PipeNameBox" Width="140" Margin="8,0,16,0" Text="LCOInput" IsReadOnly="True"/>
-            <Button x:Name="StartButton" Content="Start" Padding="12,4" Margin="0,0,8,0" Click="StartButton_Click"/>
+            <Button x:Name="StartButton" Content="Start" Padding="12,4" Margin="0,0,8,0" Click="StartButton_Click"
+                    Background="#2E6D3A" BorderBrush="#46C169" />
             <Button x:Name="StopButton" Content="Stop" Padding="12,4" IsEnabled="False" Click="StopButton_Click"/>
             <Button x:Name="ConsoleButton" Content="Console" Padding="12,4" Click="ConsoleButton_Click"/>
         </StackPanel>
