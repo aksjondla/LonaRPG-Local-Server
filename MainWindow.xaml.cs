@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -464,7 +465,53 @@ public partial class MainWindow : Window
     private void AppendEvent(string message)
     {
         _events.Add(message);
-        EventsList.ScrollIntoView(message);
+        ScrollEventsToEndIfPinned();
+    }
+
+    private void ScrollEventsToEndIfPinned()
+    {
+        if (EventsList.Items.Count == 0)
+        {
+            return;
+        }
+
+        var scrollViewer = FindScrollViewer(EventsList);
+        if (scrollViewer == null)
+        {
+            return;
+        }
+
+        if (scrollViewer.ScrollableHeight <= 0)
+        {
+            return;
+        }
+
+        const double threshold = 16.0;
+        if (scrollViewer.VerticalOffset >= scrollViewer.ScrollableHeight - threshold)
+        {
+            scrollViewer.ScrollToEnd();
+        }
+    }
+
+    private static ScrollViewer? FindScrollViewer(DependencyObject root)
+    {
+        if (root is ScrollViewer viewer)
+        {
+            return viewer;
+        }
+
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            var result = FindScrollViewer(child);
+            if (result != null)
+            {
+                return result;
+            }
+        }
+
+        return null;
     }
 
     private void InitKeyBindings()
