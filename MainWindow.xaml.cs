@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -29,42 +30,11 @@ public partial class MainWindow : Window
     private const ushort DefaultNpc = 0;
 
     private readonly ObservableCollection<string> _events = new();
+    private readonly ObservableCollection<KeyBindingRow> _bindings = new();
     private readonly DispatcherTimer _sendTimer;
-    private readonly Dictionary<int, int> _keyBitByVKey = new()
-    {
-        { 0x57, 0 }, // W
-        { 0x49, 0 }, // I
-        { 0x41, 1 }, // A
-        { 0x4A, 1 }, // J
-        { 0x53, 2 }, // S
-        { 0x4B, 2 }, // K
-        { 0x44, 3 }, // D
-        { 0x4C, 3 }, // L
-        { 0x10, 4 }, // SHIFT (dodge)
-        { 0xA0, 4 }, // LSHIFT (dodge)
-        { 0xA1, 4 }, // RSHIFT (dodge)
-        { 0x63, 4 }, // NUMPAD3 (dodge)
-        { 0x11, 5 }, // CTRL
-        { 0xA2, 5 }, // LCTRL
-        { 0xA3, 5 }, // RCTRL
-        { 0x12, 6 }, // ALT
-        { 0xA4, 6 }, // LALT
-        { 0xA5, 6 }, // RALT
-        { 0x20, 7 }, // SPACE
-        { 0x51, 8 }, // Q
-        { 0x59, 8 }, // Y
-        { 0x45, 9 }, // E
-        { 0x66, 9 }, // NUMPAD6
-        { 0x52, 10 }, // R
-        { 0x65, 10 }, // NUMPAD5
-        { 0x46, 11 }, // F
-        { 0x64, 11 }, // NUMPAD4
-        { 0x31, 12 }, // 1
-        { 0x67, 12 }, // NUMPAD7
-        { 0x32, 13 }, // 2
-        { 0x68, 13 }, // NUMPAD8
-        { 0x33, 14 }, // 3
-    };
+    private readonly Dictionary<int, int> _keyBitByVKey = new();
+
+    private KeyBindingRow? _pendingBind;
 
     private HwndSource? _source;
 
@@ -77,10 +47,54 @@ public partial class MainWindow : Window
     private uint _seq;
     private ulong _keysMask;
 
+    private sealed class KeyBindingRow : INotifyPropertyChanged
+    {
+        private int _vkey;
+        private string _keyName;
+
+        public KeyBindingRow(string action, int bit, int vkey)
+        {
+            Action = action;
+            Bit = bit;
+            _keyName = "";
+            SetVKey(vkey);
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public string Action { get; }
+        public int Bit { get; }
+
+        public int VKey => _vkey;
+
+        public string KeyName
+        {
+            get => _keyName;
+            private set
+            {
+                if (_keyName == value)
+                {
+                    return;
+                }
+                _keyName = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(KeyName)));
+            }
+        }
+
+        public void SetVKey(int vkey)
+        {
+            _vkey = vkey;
+            KeyName = FormatVKey(vkey);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(VKey)));
+        }
+    }
+
     public MainWindow()
     {
         InitializeComponent();
         EventsList.ItemsSource = _events;
+        BindingsGrid.ItemsSource = _bindings;
+        InitKeyBindings();
 
         _sendTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         _sendTimer.Tick += SendTimer_Tick;
@@ -97,6 +111,15 @@ public partial class MainWindow : Window
     {
         _events.Clear();
         LastEventText.Text = "-";
+    }
+
+    private void BindButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.DataContext is KeyBindingRow row)
+        {
+            _pendingBind = row;
+            BindStatusText.Text = $"Нажмите клавишу для: {row.Action}";
+        }
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -394,12 +417,20 @@ public partial class MainWindow : Window
 
             var k = raw.keyboard;
             bool isUp = (k.Flags & RI_KEY_BREAK) != 0;
-            int vkey = k.VKey;
+            int vkey = NormalizeVKey(k.VKey);
             Key key = KeyInterop.KeyFromVirtualKey(vkey);
             string device = raw.header.hDevice == IntPtr.Zero
                 ? "N/A"
                 : $"0x{raw.header.hDevice.ToInt64():X}";
             string message = $"{DateTime.Now:HH:mm:ss.fff} {device} VK={vkey} ({key}) {(isUp ? "UP" : "DOWN")}";
+
+            if (_pendingBind != null && !isUp)
+            {
+                ApplyBinding(_pendingBind, vkey);
+                BindStatusText.Text = $"Назначено: {_pendingBind.Action} = {FormatVKey(vkey)}";
+                _pendingBind = null;
+                return;
+            }
 
             UpdateKeyMask(vkey, isUp);
 
@@ -434,6 +465,91 @@ public partial class MainWindow : Window
     {
         _events.Add(message);
         EventsList.ScrollIntoView(message);
+    }
+
+    private void InitKeyBindings()
+    {
+        _bindings.Clear();
+        AddBinding("Up", 0, 0x57); // W
+        AddBinding("Left", 1, 0x41); // A
+        AddBinding("Down", 2, 0x53); // S
+        AddBinding("Right", 3, 0x44); // D
+        AddBinding("Dodge", 4, 0x10); // SHIFT
+        AddBinding("Ctrl", 5, 0x11); // CTRL
+        AddBinding("Alt", 6, 0x12); // ALT
+        AddBinding("Space", 7, 0x20); // SPACE
+        AddBinding("Skill 1", 8, 0x51); // Q
+        AddBinding("Skill 2", 9, 0x45); // E
+        AddBinding("Skill 3", 10, 0x52); // R
+        AddBinding("Skill 4", 11, 0x46); // F
+        AddBinding("Skill 5", 12, 0x31); // 1
+        AddBinding("Skill 6", 13, 0x32); // 2
+        AddBinding("Extra", 14, 0x33); // 3
+        RebuildKeyMap();
+    }
+
+    private void AddBinding(string action, int bit, int vkey)
+    {
+        _bindings.Add(new KeyBindingRow(action, bit, vkey));
+    }
+
+    private void ApplyBinding(KeyBindingRow row, int vkey)
+    {
+        if (vkey <= 0 || vkey == 0xFF)
+        {
+            return;
+        }
+
+        foreach (var other in _bindings)
+        {
+            if (!ReferenceEquals(other, row) && other.VKey == vkey)
+            {
+                other.SetVKey(0);
+            }
+        }
+
+        row.SetVKey(vkey);
+        RebuildKeyMap();
+    }
+
+    private void RebuildKeyMap()
+    {
+        _keyBitByVKey.Clear();
+        foreach (var row in _bindings)
+        {
+            if (row.VKey <= 0)
+            {
+                continue;
+            }
+            _keyBitByVKey[row.VKey] = row.Bit;
+        }
+    }
+
+    private static int NormalizeVKey(int vkey)
+    {
+        return vkey switch
+        {
+            0xA0 or 0xA1 => 0x10, // LSHIFT/RSHIFT -> SHIFT
+            0xA2 or 0xA3 => 0x11, // LCTRL/RCTRL -> CTRL
+            0xA4 or 0xA5 => 0x12, // LALT/RALT -> ALT
+            _ => vkey
+        };
+    }
+
+    private static string FormatVKey(int vkey)
+    {
+        if (vkey <= 0)
+        {
+            return "—";
+        }
+
+        var key = KeyInterop.KeyFromVirtualKey(vkey);
+        if (key != Key.None)
+        {
+            return key.ToString();
+        }
+
+        return $"VK_0x{vkey:X2}";
     }
 
     [DllImport("user32.dll", SetLastError = true)]

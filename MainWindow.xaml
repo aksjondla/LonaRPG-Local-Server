@@ -11,6 +11,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -50,9 +51,39 @@
             </StackPanel>
         </Border>
 
-        <ListBox x:Name="EventsList" Grid.Row="3" FontFamily="Consolas"/>
+        <Border Grid.Row="3" Background="#F3F3F3" CornerRadius="6" Padding="10" Margin="0,0,0,12">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <TextBlock Text="Назначение клавиш клиента" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="BindStatusText" Text="Нажмите «Назначить» и затем нужную клавишу."
+                               Opacity="0.7" Margin="0,4,0,0"/>
+                </StackPanel>
+                <DataGrid x:Name="BindingsGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          HeadersVisibility="Column"
+                          CanUserResizeRows="False"
+                          GridLinesVisibility="None"
+                          RowHeight="28"
+                          MinHeight="140">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Действие" Binding="{Binding Action}" Width="*"/>
+                        <DataGridTextColumn Header="Клавиша" Binding="{Binding KeyName}" Width="160"/>
+                        <DataGridTemplateColumn Header="" Width="120">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Content="Назначить" Padding="8,2" Click="BindButton_Click"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </Border>
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+        <ListBox x:Name="EventsList" Grid.Row="4" FontFamily="Consolas"/>
+
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button x:Name="ClearButton" Content="Очистить" Padding="12,6" Click="ClearButton_Click"/>
         </StackPanel>
     </Grid>
