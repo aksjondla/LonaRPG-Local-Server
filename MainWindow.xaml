@@ -18,9 +18,9 @@
             </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
-            <TextBlock Text="Raw Input клавиатуры (RIDEV_INPUTSINK)" FontSize="20" FontWeight="SemiBold"/>
+            <TextBlock Text="Input keys" FontSize="20" FontWeight="SemiBold"/>
             <TextBlock x:Name="StatusText" Text="Статус: ожидание инициализации..." Foreground="DarkGreen" Margin="0,6,0,0"/>
-            <TextBlock Text="Окно может быть не в фокусе — события всё равно приходят." Opacity="0.7"/>
+            <TextBlock Text="Окно можно свернуть." Opacity="0.7"/>
         </StackPanel>
 
         <Border Grid.Row="1" Background="#F3F3F3" CornerRadius="6" Padding="10" Margin="0,0,0,12">
@@ -29,7 +29,7 @@
                     <TextBlock Text="Host:" VerticalAlignment="Center"/>
                     <TextBox x:Name="HostBox" Width="140" Margin="8,0,12,0" Text="127.0.0.1"/>
                     <TextBlock Text="Port:" VerticalAlignment="Center"/>
-                    <TextBox x:Name="PortBox" Width="80" Margin="8,0,12,0" Text="50123"/>
+                    <TextBox x:Name="PortBox" Width="80" Margin="8,0,12,0" Text="50123" IsReadOnly="True"/>
                     <TextBlock Text="Name:" VerticalAlignment="Center"/>
                     <TextBox x:Name="NameBox" Width="140" Margin="8,0,12,0" Text="player1"/>
                     <Button x:Name="ConnectButton" Content="Connect" Padding="12,4" Margin="0,0,8,0" Click="ConnectButton_Click"/>
