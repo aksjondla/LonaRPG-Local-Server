@@ -4,6 +4,107 @@
              xmlns:local="clr-namespace:Host"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-         
+        <Color x:Key="Color.WindowBg">#121417</Color>
+        <Color x:Key="Color.CardBg">#1B2027</Color>
+        <Color x:Key="Color.CardBorder">#2B313B</Color>
+        <Color x:Key="Color.TextPrimary">#E6EAF0</Color>
+        <Color x:Key="Color.TextSecondary">#A7B0BE</Color>
+        <Color x:Key="Color.Accent">#5BB2FF</Color>
+        <Color x:Key="Color.ButtonBg">#242B35</Color>
+        <Color x:Key="Color.ButtonHover">#2D3642</Color>
+        <Color x:Key="Color.ButtonPressed">#384351</Color>
+        <Color x:Key="Color.InputBg">#141920</Color>
+
+        <SolidColorBrush x:Key="Brush.WindowBg" Color="{StaticResource Color.WindowBg}"/>
+        <SolidColorBrush x:Key="Brush.CardBg" Color="{StaticResource Color.CardBg}"/>
+        <SolidColorBrush x:Key="Brush.CardBorder" Color="{StaticResource Color.CardBorder}"/>
+        <SolidColorBrush x:Key="Brush.TextPrimary" Color="{StaticResource Color.TextPrimary}"/>
+        <SolidColorBrush x:Key="Brush.TextSecondary" Color="{StaticResource Color.TextSecondary}"/>
+        <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}"/>
+        <SolidColorBrush x:Key="Brush.ButtonBg" Color="{StaticResource Color.ButtonBg}"/>
+        <SolidColorBrush x:Key="Brush.ButtonHover" Color="{StaticResource Color.ButtonHover}"/>
+        <SolidColorBrush x:Key="Brush.ButtonPressed" Color="{StaticResource Color.ButtonPressed}"/>
+        <SolidColorBrush x:Key="Brush.InputBg" Color="{StaticResource Color.InputBg}"/>
+
+        <Style TargetType="Window">
+            <Setter Property="Background" Value="{StaticResource Brush.WindowBg}"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+        </Style>
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource Brush.InputBg}"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.CardBorder}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource Brush.TextPrimary}"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="SelectionBrush" Value="{StaticResource Brush.Accent}"/>
+        </Style>
+
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource Brush.ButtonBg}"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.CardBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Brush.ButtonHover}"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Brush.ButtonPressed}"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.5"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="Border">
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.CardBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="{StaticResource Brush.CardBg}"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.CardBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="{StaticResource Brush.CardBg}"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.CardBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="RowBackground" Value="{StaticResource Brush.CardBg}"/>
+            <Setter Property="AlternatingRowBackground" Value="#212833"/>
+            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Brush.CardBorder}"/>
+            <Setter Property="VerticalGridLinesBrush" Value="{StaticResource Brush.CardBorder}"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+        </Style>
+
+        <Style TargetType="DataGridRow">
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.CardBorder}"/>
+        </Style>
+
+        <Style TargetType="DataGridCell">
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.CardBorder}"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+        </Style>
+
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#252C36"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.CardBorder}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
     </Application.Resources>
 </Application>
