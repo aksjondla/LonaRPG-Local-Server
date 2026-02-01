@@ -16,4 +16,8 @@
     <None Remove="Host\**\*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="Assets\telegram.png" />
+  </ItemGroup>
+
 </Project>

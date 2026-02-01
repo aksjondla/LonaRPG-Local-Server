@@ -35,6 +35,10 @@
                     <TextBox x:Name="PortBox" Width="80" Margin="8,0,12,0" Text="50123" IsReadOnly="True"/>
                     <TextBlock Text="Name:" VerticalAlignment="Center"/>
                     <TextBox x:Name="NameBox" Width="140" Margin="8,0,12,0" Text="player1"/>
+                    <Button x:Name="TelegramButton" Padding="4" Margin="0,0,8,0" Click="OnTelegramClick"
+                            Background="Transparent" BorderBrush="{x:Null}" ToolTip="Telegram">
+                        <Image Width="16" Height="16" Stretch="Uniform" Source="Assets/telegram.png"/>
+                    </Button>
                     <Button x:Name="ConnectButton" Content="Connect" Padding="12,4" Margin="0,0,8,0" Click="ConnectButton_Click"
                             Background="#2E6D3A" BorderBrush="#46C169" />
                     <Button x:Name="DisconnectButton" Content="Disconnect" Padding="12,4" IsEnabled="False" Click="DisconnectButton_Click"/>

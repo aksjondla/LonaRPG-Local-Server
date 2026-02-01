@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
+using System.Windows.Navigation;
 
 namespace Host;
 
@@ -94,6 +95,29 @@ public partial class MainWindow : Window
     {
         _players.Clear();
         _rowsByPid.Clear();
+    }
+
+    private void OnTelegramNavigate(object sender, RequestNavigateEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch
+        {
+        }
+        e.Handled = true;
+    }
+
+    private void OnTelegramClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://t.me/CooperativeMode/1") { UseShellExecute = true });
+        }
+        catch
+        {
+        }
     }
 
     protected override void OnClosed(EventArgs e)

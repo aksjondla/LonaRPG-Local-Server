@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -13,6 +14,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Windows.Navigation;
 
 namespace Client;
 
@@ -112,6 +114,29 @@ public partial class MainWindow : Window
     {
         _events.Clear();
         LastEventText.Text = "-";
+    }
+
+    private void OnTelegramNavigate(object sender, RequestNavigateEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch
+        {
+        }
+        e.Handled = true;
+    }
+
+    private void OnTelegramClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://t.me/CooperativeMode/1") { UseShellExecute = true });
+        }
+        catch
+        {
+        }
     }
 
     private void BindButton_Click(object sender, RoutedEventArgs e)
