@@ -6,15 +6,16 @@
         xmlns:local="clr-namespace:Client"
         mc:Ignorable="d"
         Title="Raw Input Receiver" Height="520" Width="900" MinHeight="420" MinWidth="720">
-    <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
             <TextBlock Text="Raw Input клавиатуры (RIDEV_INPUTSINK)" FontSize="20" FontWeight="SemiBold"/>
@@ -83,8 +84,9 @@
 
         <ListBox x:Name="EventsList" Grid.Row="4" FontFamily="Consolas"/>
 
-        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button x:Name="ClearButton" Content="Очистить" Padding="12,6" Click="ClearButton_Click"/>
-        </StackPanel>
-    </Grid>
+            <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                <Button x:Name="ClearButton" Content="Очистить" Padding="12,6" Click="ClearButton_Click"/>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
 </Window>
