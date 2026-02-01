@@ -33,12 +33,17 @@ public partial class MainWindow : Window
     private readonly Dictionary<int, int> _keyBitByVKey = new()
     {
         { 0x57, 0 }, // W
+        { 0x49, 0 }, // I
         { 0x41, 1 }, // A
+        { 0x4A, 1 }, // J
         { 0x53, 2 }, // S
+        { 0x4B, 2 }, // K
         { 0x44, 3 }, // D
-        { 0x10, 4 }, // SHIFT
-        { 0xA0, 4 }, // LSHIFT
-        { 0xA1, 4 }, // RSHIFT
+        { 0x4C, 3 }, // L
+        { 0x10, 4 }, // SHIFT (dodge)
+        { 0xA0, 4 }, // LSHIFT (dodge)
+        { 0xA1, 4 }, // RSHIFT (dodge)
+        { 0x63, 4 }, // NUMPAD3 (dodge)
         { 0x11, 5 }, // CTRL
         { 0xA2, 5 }, // LCTRL
         { 0xA3, 5 }, // RCTRL
@@ -47,11 +52,17 @@ public partial class MainWindow : Window
         { 0xA5, 6 }, // RALT
         { 0x20, 7 }, // SPACE
         { 0x51, 8 }, // Q
+        { 0x59, 8 }, // Y
         { 0x45, 9 }, // E
+        { 0x66, 9 }, // NUMPAD6
         { 0x52, 10 }, // R
+        { 0x65, 10 }, // NUMPAD5
         { 0x46, 11 }, // F
+        { 0x64, 11 }, // NUMPAD4
         { 0x31, 12 }, // 1
+        { 0x67, 12 }, // NUMPAD7
         { 0x32, 13 }, // 2
+        { 0x68, 13 }, // NUMPAD8
         { 0x33, 14 }, // 3
     };
 

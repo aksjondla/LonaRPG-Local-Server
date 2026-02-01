@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
+using System.Threading;
 
 namespace Host;
 
@@ -11,6 +12,13 @@ public sealed class RubyBridgePipe : IDisposable
     private readonly string _pipeName;
     private readonly object _sync = new();
     private NamedPipeServerStream? _pipe;
+    private long _sentFrames;
+    private int _sentBytesLast;
+    private long _droppedFrames;
+    private long _timeouts;
+    private int _writeInProgress;
+
+    private static readonly TimeSpan WriteTimeout = TimeSpan.FromMilliseconds(20);
 
     public RubyBridgePipe(string pipeName)
     {
@@ -31,30 +39,50 @@ public sealed class RubyBridgePipe : IDisposable
             return;
         }
 
-        byte[] len = new byte[2];
-        BinaryPrimitives.WriteUInt16LittleEndian(len, (ushort)payload.Length);
+        byte[] frame = new byte[2 + payload.Length];
+        BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(0, 2), (ushort)payload.Length);
+        Buffer.BlockCopy(payload, 0, frame, 2, payload.Length);
 
-        lock (_sync)
+        if (Interlocked.Exchange(ref _writeInProgress, 1) == 1)
         {
-            if (_pipe == null || !_pipe.IsConnected)
-            {
-                return;
-            }
+            Interlocked.Increment(ref _droppedFrames);
+            return;
+        }
 
-            try
+        try
+        {
+            lock (_sync)
             {
-                _pipe.Write(len, 0, len.Length);
-                _pipe.Write(payload, 0, payload.Length);
-                _pipe.Flush();
+                if (_pipe == null || !_pipe.IsConnected)
+                {
+                    return;
+                }
+
+                try
+                {
+                    using var cts = new CancellationTokenSource(WriteTimeout);
+                    _pipe.WriteAsync(frame, 0, frame.Length, cts.Token).GetAwaiter().GetResult();
+                    _sentFrames++;
+                    _sentBytesLast = frame.Length;
+                }
+                catch (OperationCanceledException)
+                {
+                    _timeouts++;
+                    RestartPipe();
+                }
+                catch (IOException)
+                {
+                    RestartPipe();
+                }
+                catch (ObjectDisposedException)
+                {
+                    RestartPipe();
+                }
             }
-            catch (IOException)
-            {
-                RestartPipe();
-            }
-            catch (ObjectDisposedException)
-            {
-                RestartPipe();
-            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _writeInProgress, 0);
         }
     }
 
@@ -64,6 +92,15 @@ public sealed class RubyBridgePipe : IDisposable
         {
             _pipe?.Dispose();
             _pipe = null;
+        }
+    }
+
+    public (long Frames, int LastBytes, bool Connected, long Dropped, long Timeouts) GetStats()
+    {
+        lock (_sync)
+        {
+            bool connected = _pipe != null && _pipe.IsConnected;
+            return (_sentFrames, _sentBytesLast, connected, _droppedFrames, _timeouts);
         }
     }
 
@@ -77,7 +114,9 @@ public sealed class RubyBridgePipe : IDisposable
                 PipeDirection.Out,
                 1,
                 PipeTransmissionMode.Byte,
-                PipeOptions.Asynchronous);
+                PipeOptions.Asynchronous,
+                0,
+                64 * 1024);
 
             _ = _pipe.WaitForConnectionAsync();
         }

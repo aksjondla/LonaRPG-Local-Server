@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,7 +23,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _cts;
     private TcpHostServer? _server;
     private RubyBridgePipe? _rubyBridge;
-    private Timer? _rubyTimer;
+    private Task? _rubyLoopTask;
 
     private static readonly TimeSpan RubyInterval = TimeSpan.FromMilliseconds(16);
     private static readonly TimeSpan RubyStaleTimeout = TimeSpan.FromMilliseconds(500);
@@ -33,7 +34,11 @@ public partial class MainWindow : Window
         PlayersGrid.ItemsSource = _players;
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-        _timer.Tick += (_, __) => RefreshPlayers();
+        _timer.Tick += (_, __) =>
+        {
+            RefreshPlayers();
+            UpdatePipeStatus();
+        };
     }
 
     private void StartButton_Click(object sender, RoutedEventArgs e)
@@ -66,15 +71,18 @@ public partial class MainWindow : Window
         _server.Start();
 
         _rubyBridge = new RubyBridgePipe(pipeName);
-        _rubyTimer = new Timer(_ => SendRubySnapshot(), null, RubyInterval, RubyInterval);
 
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => _server.AcceptLoopAsync(_cts.Token));
+        _rubyLoopTask = Task.Run(() => RubyLoopAsync(_cts.Token));
 
         StatusText.Text = $"Status: running on {bindIp}:{port} -> Pipe \\\\.\\pipe\\{pipeName}";
+        PipeStatusText.Text = "Pipe: waiting for client...";
         StartButton.IsEnabled = false;
         StopButton.IsEnabled = true;
         _timer.Start();
+
+        DebugConsole.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Host started on {bindIp}:{port}, pipe=\\\\.\\pipe\\{pipeName}");
     }
 
     private void StopButton_Click(object sender, RoutedEventArgs e)
@@ -97,19 +105,22 @@ public partial class MainWindow : Window
     private void StopServer()
     {
         _timer.Stop();
-        _rubyTimer?.Dispose();
-        _rubyTimer = null;
-        _rubyBridge?.Dispose();
-        _rubyBridge = null;
         _cts?.Cancel();
         _cts = null;
 
         _server?.Stop();
         _server = null;
 
+        _rubyBridge?.Dispose();
+        _rubyBridge = null;
+        _rubyLoopTask = null;
+
         StatusText.Text = "Status: stopped";
+        PipeStatusText.Text = "Pipe: n/a";
         StartButton.IsEnabled = true;
         StopButton.IsEnabled = false;
+
+        DebugConsole.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Host stopped");
     }
 
     private void RefreshPlayers()
@@ -158,12 +169,68 @@ public partial class MainWindow : Window
         try
         {
             var snapshot = server.SnapshotPlayers();
+            var sw = Stopwatch.StartNew();
             bridge.SendSnapshot(snapshot, RubyStaleTimeout);
+            sw.Stop();
+            if (DebugConsole.IsOpen && sw.ElapsedMilliseconds >= 5)
+            {
+                DebugConsole.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] SendSnapshot took {sw.ElapsedMilliseconds}ms");
+            }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // ignore errors to keep host running
+            if (DebugConsole.IsOpen)
+            {
+                DebugConsole.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] SendSnapshot error: {ex.Message}");
+            }
         }
+    }
+
+    private async Task RubyLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var sw = Stopwatch.StartNew();
+            SendRubySnapshot();
+            sw.Stop();
+
+            var delay = RubyInterval - sw.Elapsed;
+            if (delay > TimeSpan.Zero)
+            {
+                try
+                {
+                    await Task.Delay(delay, ct);
+                }
+                catch (TaskCanceledException)
+                {
+                    return;
+                }
+            }
+        }
+    }
+
+    private void UpdatePipeStatus()
+    {
+        var bridge = _rubyBridge;
+        if (bridge == null)
+        {
+            return;
+        }
+
+        var stats = bridge.GetStats();
+        string conn = stats.Connected ? "connected" : "waiting";
+        PipeStatusText.Text = $"Pipe: {conn}, sent={stats.Frames}, lastBytes={stats.LastBytes}, dropped={stats.Dropped}, timeouts={stats.Timeouts}";
+
+        if (DebugConsole.IsOpen)
+        {
+            DebugConsole.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Pipe {conn}, sent={stats.Frames}, lastBytes={stats.LastBytes}, dropped={stats.Dropped}, timeouts={stats.Timeouts}");
+        }
+    }
+
+    private void ConsoleButton_Click(object sender, RoutedEventArgs e)
+    {
+        DebugConsole.Open();
+        DebugConsole.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Console attached");
     }
 
     private sealed class PlayerRow : INotifyPropertyChanged
