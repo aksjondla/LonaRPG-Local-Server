@@ -494,22 +494,14 @@ public partial class MainWindow : Window
 
     private ushort GetNpcIdFromUi()
     {
-        if (NpcBox == null)
+        if (NpcBackRadio != null && NpcBackRadio.IsChecked == true)
         {
-            return 0;
+            return 2;
         }
-
-        string text = NpcBox.Text.Trim();
-        if (string.IsNullOrEmpty(text))
+        if (NpcFrontRadio != null && NpcFrontRadio.IsChecked == true)
         {
-            return 0;
+            return 1;
         }
-
-        if (ushort.TryParse(text, out ushort value))
-        {
-            return value;
-        }
-
         return 0;
     }
 
