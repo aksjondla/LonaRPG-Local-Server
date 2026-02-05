@@ -568,7 +568,8 @@ public partial class MainWindow : Window
         AddBinding("Skill 4", 11, 0x46); // F
         AddBinding("Skill 5", 12, 0x31); // 1
         AddBinding("Skill 6", 13, 0x32); // 2
-        AddBinding("Extra", 14, 0x33); // 3
+        AddBinding("Skill Grab", 14, 0x33); // 3
+        AddBinding("Cycle Companion", 15, 0x34); // 4
         RebuildKeyMap();
     }
 
