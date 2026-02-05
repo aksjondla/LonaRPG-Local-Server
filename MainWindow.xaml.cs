@@ -30,7 +30,6 @@ public partial class MainWindow : Window
     private const uint RIDEV_INPUTSINK = 0x00000100;
 
     private const ushort DefaultDesiredPid = 0;
-    private const ushort DefaultNpc = 0;
 
     private readonly ObservableCollection<string> _events = new();
     private readonly ObservableCollection<KeyBindingRow> _bindings = new();
@@ -305,7 +304,7 @@ public partial class MainWindow : Window
         int i = 0;
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(i, 2), _assignedPid);
         i += 2;
-        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(i, 2), DefaultNpc);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(i, 2), GetNpcIdFromUi());
         i += 2;
         BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(i, 4), seq);
         i += 4;
@@ -491,6 +490,27 @@ public partial class MainWindow : Window
     {
         _events.Add(message);
         ScrollEventsToEndIfPinned();
+    }
+
+    private ushort GetNpcIdFromUi()
+    {
+        if (NpcBox == null)
+        {
+            return 0;
+        }
+
+        string text = NpcBox.Text.Trim();
+        if (string.IsNullOrEmpty(text))
+        {
+            return 0;
+        }
+
+        if (ushort.TryParse(text, out ushort value))
+        {
+            return value;
+        }
+
+        return 0;
     }
 
     private void ScrollEventsToEndIfPinned()
