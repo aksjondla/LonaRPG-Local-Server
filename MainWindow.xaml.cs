@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
+using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -15,6 +17,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Windows.Navigation;
+using Microsoft.Win32;
 
 namespace Client;
 
@@ -48,6 +51,28 @@ public partial class MainWindow : Window
     private ushort _assignedPid;
     private uint _seq;
     private ulong _keysMask;
+
+    private Task? _recvTask;
+    private Task? _camPipeTxTask;
+
+    private volatile string _gameRoot = "";
+
+    private const string ViewerCamPipeName = "LCOCam";
+    private NamedPipeClientStream? _camPipe;
+    private byte[]? _pendingCamFrame;
+    private readonly byte[] _camLenBuf = new byte[4];
+
+    private uint _camAsmId;
+    private uint _camAsmTotalLen;
+    private int _camAsmReceived;
+    private byte[]? _camAsmBuf;
+
+    private uint _saveAsmSeq;
+    private uint _saveAsmTotalLen;
+    private uint _saveAsmMaxWritten;
+    private FileStream? _saveAsmStream;
+    private string? _saveAsmTmpPath;
+    private string? _saveAsmFinalPath;
 
     private sealed class KeyBindingRow : INotifyPropertyChanged
     {
@@ -147,6 +172,39 @@ public partial class MainWindow : Window
         }
     }
 
+    private void GameRootBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _gameRoot = GameRootBox.Text.Trim();
+    }
+
+    private void BrowseGameButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = "Select LonaRPG game folder (pick Game.ini)",
+                Filter = "Game.ini|Game.ini|Executable (*.exe)|*.exe|All files|*.*",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+
+            bool? ok = dlg.ShowDialog(this);
+            if (ok == true)
+            {
+                string? dir = Path.GetDirectoryName(dlg.FileName);
+                if (!string.IsNullOrWhiteSpace(dir))
+                {
+                    GameRootBox.Text = dir;
+                    _gameRoot = dir.Trim();
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
         if (_tcp != null)
@@ -202,6 +260,8 @@ public partial class MainWindow : Window
             DisconnectButton.IsEnabled = true;
 
             _sendTimer.Start();
+            _recvTask = Task.Run(() => ReceiveLoopAsync(_netCts.Token));
+            _camPipeTxTask = Task.Run(() => CamPipeTxLoopAsync(_netCts.Token));
             await SendStateAsync(_netCts.Token);
         }
         catch (Exception ex)
@@ -252,6 +312,38 @@ public partial class MainWindow : Window
         _tcp?.Close();
         _stream = null;
         _tcp = null;
+
+        _recvTask = null;
+        _camPipeTxTask = null;
+        Interlocked.Exchange(ref _pendingCamFrame, null);
+
+        _camAsmId = 0;
+        _camAsmTotalLen = 0;
+        _camAsmReceived = 0;
+        _camAsmBuf = null;
+
+        try
+        {
+            _camPipe?.Dispose();
+        }
+        catch
+        {
+        }
+        _camPipe = null;
+
+        try
+        {
+            _saveAsmStream?.Dispose();
+        }
+        catch
+        {
+        }
+        _saveAsmStream = null;
+        _saveAsmSeq = 0;
+        _saveAsmTotalLen = 0;
+        _saveAsmMaxWritten = 0;
+        _saveAsmTmpPath = null;
+        _saveAsmFinalPath = null;
 
         NetStatusText.Text = status;
         PidText.Text = "-";
@@ -336,6 +428,321 @@ public partial class MainWindow : Window
         }
 
         return (type, payload);
+    }
+
+    private async Task ReceiveLoopAsync(CancellationToken ct)
+    {
+        var stream = _stream;
+        if (stream == null)
+        {
+            return;
+        }
+
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var packet = await ReadPacketAsync(stream, ct);
+                switch (packet.Type)
+                {
+                    case PacketType.CamChunk:
+                        HandleCamChunk(packet.Payload);
+                        break;
+
+                    case PacketType.SaveChunk:
+                        await HandleSaveChunkAsync(packet.Payload, ct);
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (_tcp != null)
+                {
+                    DisconnectInternal($"recv failed: {ex.Message}");
+                }
+            });
+        }
+    }
+
+    private void HandleCamChunk(byte[] payload)
+    {
+        if (payload.Length < 12)
+        {
+            return;
+        }
+
+        uint camId = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(0, 4));
+        uint totalLen = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(4, 4));
+        uint offset = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(8, 4));
+        int chunkLen = payload.Length - 12;
+
+        if (totalLen == 0 || totalLen > 4_000_000)
+        {
+            return;
+        }
+
+        if (offset > totalLen || offset + (uint)chunkLen > totalLen)
+        {
+            return;
+        }
+
+        if (_camAsmBuf == null || camId != _camAsmId || totalLen != _camAsmTotalLen)
+        {
+            if (offset != 0)
+            {
+                return;
+            }
+
+            _camAsmId = camId;
+            _camAsmTotalLen = totalLen;
+            _camAsmReceived = 0;
+            _camAsmBuf = new byte[(int)totalLen];
+        }
+
+        if (_camAsmBuf == null)
+        {
+            return;
+        }
+
+        if (offset != (uint)_camAsmReceived)
+        {
+            // Protocol is ordered; if we see an unexpected offset, drop the partial frame.
+            _camAsmBuf = null;
+            _camAsmReceived = 0;
+            _camAsmTotalLen = 0;
+            return;
+        }
+
+        Buffer.BlockCopy(payload, 12, _camAsmBuf, (int)offset, chunkLen);
+        _camAsmReceived += chunkLen;
+
+        if ((uint)_camAsmReceived >= _camAsmTotalLen)
+        {
+            var frame = _camAsmBuf;
+            _camAsmBuf = null;
+            _camAsmReceived = 0;
+            _camAsmTotalLen = 0;
+            Interlocked.Exchange(ref _pendingCamFrame, frame);
+        }
+    }
+
+    private async Task CamPipeTxLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var frame = Interlocked.Exchange(ref _pendingCamFrame, null);
+            if (frame != null)
+            {
+                await SendCamFrameToViewerAsync(frame, ct);
+                continue;
+            }
+
+            try
+            {
+                await Task.Delay(8, ct);
+            }
+            catch (TaskCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    private async Task SendCamFrameToViewerAsync(byte[] frame, CancellationToken ct)
+    {
+        if (frame.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_camPipe == null || !_camPipe.IsConnected)
+            {
+                try
+                {
+                    _camPipe?.Dispose();
+                }
+                catch
+                {
+                }
+
+                var pipe = new NamedPipeClientStream(".", ViewerCamPipeName, PipeDirection.Out, PipeOptions.Asynchronous);
+                using var tmo = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                tmo.CancelAfter(150);
+                await pipe.ConnectAsync(tmo.Token);
+                _camPipe = pipe;
+            }
+
+            var p = _camPipe;
+            if (p == null || !p.IsConnected)
+            {
+                return;
+            }
+
+            BinaryPrimitives.WriteUInt32LittleEndian(_camLenBuf, (uint)frame.Length);
+            await p.WriteAsync(_camLenBuf, ct);
+            await p.WriteAsync(frame, ct);
+            await p.FlushAsync(ct);
+        }
+        catch
+        {
+            try
+            {
+                _camPipe?.Dispose();
+            }
+            catch
+            {
+            }
+            _camPipe = null;
+        }
+    }
+
+    private async Task HandleSaveChunkAsync(byte[] payload, CancellationToken ct)
+    {
+        if (payload.Length < 12)
+        {
+            return;
+        }
+
+        uint saveSeq = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(0, 4));
+        uint totalLen = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(4, 4));
+        uint offset = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(8, 4));
+        int chunkLen = payload.Length - 12;
+
+        if (totalLen == 0 || totalLen > 64_000_000)
+        {
+            return;
+        }
+
+        if (offset > totalLen)
+        {
+            return;
+        }
+
+        if (offset + (uint)chunkLen > totalLen)
+        {
+            chunkLen = (int)(totalLen - offset);
+        }
+
+        string gameRoot = _gameRoot;
+        if (string.IsNullOrWhiteSpace(gameRoot))
+        {
+            return;
+        }
+
+        string userDataDir = Path.Combine(gameRoot, "UserData");
+        string finalPath = Path.Combine(userDataDir, "SavQuick.rvdata2");
+        string tmpPath = finalPath + ".tmp";
+
+        // New save transfer begins only at offset=0.
+        if (_saveAsmStream == null || saveSeq != _saveAsmSeq || totalLen != _saveAsmTotalLen)
+        {
+            if (offset != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                _saveAsmStream?.Dispose();
+            }
+            catch
+            {
+            }
+
+            Directory.CreateDirectory(userDataDir);
+            _saveAsmSeq = saveSeq;
+            _saveAsmTotalLen = totalLen;
+            _saveAsmMaxWritten = 0;
+            _saveAsmTmpPath = tmpPath;
+            _saveAsmFinalPath = finalPath;
+            _saveAsmStream = new FileStream(
+                tmpPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.Read,
+                64 * 1024,
+                FileOptions.Asynchronous);
+            _saveAsmStream.SetLength(totalLen);
+        }
+
+        if (_saveAsmStream == null)
+        {
+            return;
+        }
+
+        if (chunkLen > 0)
+        {
+            _saveAsmStream.Position = offset;
+            await _saveAsmStream.WriteAsync(payload.AsMemory(12, chunkLen), ct);
+            uint end = offset + (uint)chunkLen;
+            if (end > _saveAsmMaxWritten)
+            {
+                _saveAsmMaxWritten = end;
+            }
+        }
+
+        if (_saveAsmMaxWritten >= _saveAsmTotalLen)
+        {
+            try
+            {
+                await _saveAsmStream.FlushAsync(ct);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                _saveAsmStream.Dispose();
+            }
+            catch
+            {
+            }
+            _saveAsmStream = null;
+
+            if (!string.IsNullOrWhiteSpace(_saveAsmTmpPath) && !string.IsNullOrWhiteSpace(_saveAsmFinalPath))
+            {
+                try
+                {
+                    File.Move(_saveAsmTmpPath!, _saveAsmFinalPath!, overwrite: true);
+
+                    // Marker file used by the viewer mod to know the quicksave is fully received.
+                    try
+                    {
+                        string markerPath = Path.Combine(userDataDir, "SavQuick.seq");
+                        string markerTmp = markerPath + ".tmp";
+                        File.WriteAllText(markerTmp, saveSeq.ToString());
+                        File.Move(markerTmp, markerPath, overwrite: true);
+                    }
+                    catch
+                    {
+                    }
+                }
+                catch
+                {
+                    // ignore; viewer will keep trying next save_seq
+                }
+            }
+
+            _saveAsmTmpPath = null;
+            _saveAsmFinalPath = null;
+        }
     }
 
     private static bool TryParseWelcome(byte[] payload, out ushort ver, out ushort pid, out bool ok, out string msg)

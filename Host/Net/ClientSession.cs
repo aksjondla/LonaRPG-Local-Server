@@ -13,6 +13,7 @@ public sealed class ClientSession
     private readonly TcpClient _client;
     private readonly NetworkStream _stream;
     private readonly TcpHostServer _server;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
 
     public IPEndPoint RemoteEndPoint { get; }
     public ushort AssignedPid { get; private set; }
@@ -124,9 +125,7 @@ public sealed class ClientSession
         if (ver != Proto.Version)
         {
             var msg = Proto.PackString($"Protocol mismatch: server={Proto.Version}, client={ver}");
-            await Proto.SendPacketAsync(_stream, PacketType.Welcome,
-                BuildWelcomePayload(Proto.Version, 0, ok: false, msg),
-                ct);
+            await SendPacketAsync(PacketType.Welcome, BuildWelcomePayload(Proto.Version, 0, ok: false, msg), ct);
             _client.Close();
             return;
         }
@@ -136,9 +135,135 @@ public sealed class ClientSession
 
         _server.RegisterPlayer(AssignedPid, name);
 
-        await Proto.SendPacketAsync(_stream, PacketType.Welcome,
+        await SendPacketAsync(PacketType.Welcome,
             BuildWelcomePayload(Proto.Version, AssignedPid, ok: true, Proto.PackString("ok")),
             ct);
+    }
+
+    public async Task<bool> TrySendAsync(PacketType type, byte[] payload, CancellationToken ct, bool dropIfBusy)
+    {
+        bool acquired = false;
+        try
+        {
+            if (dropIfBusy)
+            {
+                acquired = await _sendLock.WaitAsync(0, ct);
+                if (!acquired)
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                await _sendLock.WaitAsync(ct);
+                acquired = true;
+            }
+
+            await Proto.SendPacketAsync(_stream, type, payload, ct);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch
+        {
+            try
+            {
+                _client.Close();
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+        finally
+        {
+            if (acquired)
+            {
+                try
+                {
+                    _sendLock.Release();
+                }
+                catch
+                {
+                }
+            }
+        }
+    }
+
+    public Task SendPacketAsync(PacketType type, byte[] payload, CancellationToken ct)
+        => TrySendAsync(type, payload, ct, dropIfBusy: false);
+
+    public async Task<bool> TrySendCamFrameAsync(uint camId, byte[] frame, int maxChunkBytes, CancellationToken ct)
+    {
+        if (frame.Length == 0)
+        {
+            return true;
+        }
+
+        if (maxChunkBytes < 1)
+        {
+            maxChunkBytes = 1;
+        }
+
+        bool acquired = false;
+        try
+        {
+            acquired = await _sendLock.WaitAsync(0, ct);
+            if (!acquired)
+            {
+                return false;
+            }
+
+            uint totalLen = (uint)frame.Length;
+            int offset = 0;
+            while (offset < frame.Length)
+            {
+                int chunkLen = Math.Min(maxChunkBytes, frame.Length - offset);
+                var payload = new byte[12 + chunkLen];
+
+                BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0, 4), camId);
+                BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4, 4), totalLen);
+                BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8, 4), (uint)offset);
+                Buffer.BlockCopy(frame, offset, payload, 12, chunkLen);
+
+                await Proto.SendPacketAsync(_stream, PacketType.CamChunk, payload, ct);
+                offset += chunkLen;
+            }
+
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch
+        {
+            try
+            {
+                _client.Close();
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+        finally
+        {
+            if (acquired)
+            {
+                try
+                {
+                    _sendLock.Release();
+                }
+                catch
+                {
+                }
+            }
+        }
     }
 
     private static byte[] BuildWelcomePayload(ushort ver, ushort pid, bool ok, byte[] msgPacked)

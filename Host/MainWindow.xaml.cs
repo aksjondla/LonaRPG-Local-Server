@@ -25,9 +25,16 @@ public partial class MainWindow : Window
     private TcpHostServer? _server;
     private RubyBridgePipe? _rubyBridge;
     private Task? _rubyLoopTask;
+    private CamRelayPipe? _camRelay;
+    private SaveRelayPipe? _saveRelay;
+    private Task? _camTxLoopTask;
 
     private static readonly TimeSpan RubyInterval = TimeSpan.FromMilliseconds(16);
     private static readonly TimeSpan RubyStaleTimeout = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan CamInterval = TimeSpan.FromMilliseconds(16);
+
+    private const string CamPipeName = "LCOCamHost";
+    private const string SavePipeName = "LCOSaveHost";
 
     public MainWindow()
     {
@@ -72,13 +79,20 @@ public partial class MainWindow : Window
         _server.Start();
 
         _rubyBridge = new RubyBridgePipe(pipeName);
+        _camRelay = new CamRelayPipe(CamPipeName);
+        _saveRelay = new SaveRelayPipe(SavePipeName, _server);
 
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => _server.AcceptLoopAsync(_cts.Token));
         _rubyLoopTask = Task.Run(() => RubyLoopAsync(_cts.Token));
+        _ = _camRelay.RunAsync(_cts.Token);
+        _ = _saveRelay.RunAsync(_cts.Token);
+        _camTxLoopTask = Task.Run(() => CamTxLoopAsync(_cts.Token));
 
-        StatusText.Text = $"Status: running on {bindIp}:{port} -> Pipe \\\\.\\pipe\\{pipeName}";
+        StatusText.Text = $"Status: running on {bindIp}:{port} -> Pipe \\\\.\\pipe\\{pipeName} (cam=\\\\.\\pipe\\{CamPipeName}, save=\\\\.\\pipe\\{SavePipeName})";
         PipeStatusText.Text = "Pipe: waiting for client...";
+        CamPipeStatusText.Text = "CamPipe: waiting for client...";
+        SavePipeStatusText.Text = "SavePipe: waiting for client...";
         StartButton.IsEnabled = false;
         StopButton.IsEnabled = true;
         _timer.Start();
@@ -139,8 +153,16 @@ public partial class MainWindow : Window
         _rubyBridge = null;
         _rubyLoopTask = null;
 
+        _camRelay?.Dispose();
+        _camRelay = null;
+        _saveRelay?.Dispose();
+        _saveRelay = null;
+        _camTxLoopTask = null;
+
         StatusText.Text = "Status: stopped";
         PipeStatusText.Text = "Pipe: n/a";
+        CamPipeStatusText.Text = "CamPipe: n/a";
+        SavePipeStatusText.Text = "SavePipe: n/a";
         StartButton.IsEnabled = true;
         StopButton.IsEnabled = false;
 
@@ -245,9 +267,53 @@ public partial class MainWindow : Window
         string conn = stats.Connected ? "connected" : "waiting";
         PipeStatusText.Text = $"Pipe: {conn}, sent={stats.Frames}, lastBytes={stats.LastBytes}, dropped={stats.Dropped}, timeouts={stats.Timeouts}";
 
+        var cam = _camRelay;
+        if (cam != null)
+        {
+            var cs = cam.GetStats();
+            string cconn = cs.Connected ? "connected" : "waiting";
+            CamPipeStatusText.Text = $"CamPipe: {cconn}, rx={cs.Frames}, lastBytes={cs.LastBytes}";
+        }
+
+        var save = _saveRelay;
+        if (save != null)
+        {
+            var ss = save.GetStats();
+            string sconn = ss.Connected ? "connected" : "waiting";
+            SavePipeStatusText.Text = $"SavePipe: {sconn}, rxChunks={ss.Chunks}, lastBytes={ss.LastBytes}";
+        }
+
         if (DebugConsole.IsOpen)
         {
             DebugConsole.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Pipe {conn}, sent={stats.Frames}, lastBytes={stats.LastBytes}, dropped={stats.Dropped}, timeouts={stats.Timeouts}");
+        }
+    }
+
+    private async Task CamTxLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var server = _server;
+            var relay = _camRelay;
+            if (server != null && relay != null && relay.TryConsumeLatest(out var frame) && frame != null)
+            {
+                try
+                {
+                    await server.BroadcastCamFrameAsync(frame, ct);
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                await Task.Delay(CamInterval, ct);
+            }
+            catch (TaskCanceledException)
+            {
+                return;
+            }
         }
     }
 

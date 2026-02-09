@@ -47,6 +47,15 @@
                     <Button x:Name="DisconnectButton" Content="Disconnect" Padding="12,4" IsEnabled="False" Click="DisconnectButton_Click"/>
                 </StackPanel>
 
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="Game:" VerticalAlignment="Center"/>
+                    <TextBox x:Name="GameRootBox" Width="420" Margin="8,0,8,0" Text=""
+                             Background="#1F2F1F" BorderBrush="#3FAF5F"
+                             TextChanged="GameRootBox_TextChanged"
+                             ToolTip="Путь к папке игры (LonaRPG). Нужен для сохранений (SavQuick)."/>
+                    <Button x:Name="BrowseGameButton" Content="Browse" Padding="12,4" Click="BrowseGameButton_Click"/>
+                </StackPanel>
+
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                     <TextBlock Text="Network:" FontWeight="SemiBold"/>
                     <TextBlock x:Name="NetStatusText" Text="disconnected" Margin="8,0,0,0"/>

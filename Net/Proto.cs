@@ -13,6 +13,8 @@ public enum PacketType : byte
     Hello = 0x01,
     Welcome = 0x02,
     State = 0x10,
+    CamChunk = 0x20,
+    SaveChunk = 0x21,
 }
 
 public static class Proto
