@@ -7,6 +7,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using System.Windows.Navigation;
 
@@ -19,6 +20,8 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<PlayerRow> _players = new();
     private readonly Dictionary<ushort, PlayerRow> _rowsByPid = new();
+    private readonly Dictionary<ushort, bool> _forceSyncPressedByPid = new();
+    private readonly Dictionary<ushort, DateTime> _lastSaveRequestUtcByPid = new();
     private readonly DispatcherTimer _timer;
 
     private CancellationTokenSource? _cts;
@@ -33,6 +36,7 @@ public partial class MainWindow : Window
     private static readonly TimeSpan RubyStaleTimeout = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan CamInterval = TimeSpan.FromMilliseconds(16);
 
+    private const int ForceSyncBit = 63;
     private const string CamPipeName = "LCOCamHost";
     private const string SavePipeName = "LCOSaveHost";
 
@@ -109,6 +113,27 @@ public partial class MainWindow : Window
     {
         _players.Clear();
         _rowsByPid.Clear();
+        _forceSyncPressedByPid.Clear();
+        _lastSaveRequestUtcByPid.Clear();
+    }
+
+    private void DisablePlayerButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_server == null)
+        {
+            return;
+        }
+
+        if (sender is Button btn && btn.DataContext is PlayerRow row)
+        {
+            try
+            {
+                _server.DisconnectPlayer(row.Pid, removePlayer: true);
+            }
+            catch
+            {
+            }
+        }
     }
 
     private void OnTelegramNavigate(object sender, RequestNavigateEventArgs e)
@@ -176,6 +201,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        DateTime nowUtc = DateTime.UtcNow;
+        string saveRxAgo = FormatAgo(nowUtc, _saveRelay?.GetLastRxUtc());
+
         var snapshot = _server.SnapshotPlayers();
         var seen = new HashSet<ushort>();
 
@@ -189,7 +217,18 @@ public partial class MainWindow : Window
                 _players.Add(row);
             }
 
-            row.UpdateFrom(st);
+            bool pressed = (st.KeysMask & (1UL << ForceSyncBit)) != 0;
+            bool prevPressed = _forceSyncPressedByPid.TryGetValue(st.Pid, out var prev) && prev;
+            if (pressed && !prevPressed)
+            {
+                _lastSaveRequestUtcByPid[st.Pid] = nowUtc;
+            }
+            _forceSyncPressedByPid[st.Pid] = pressed;
+
+            DateTime? lastReqUtc = _lastSaveRequestUtcByPid.TryGetValue(st.Pid, out var last) ? last : null;
+            string saveReqAgo = FormatAgo(nowUtc, lastReqUtc);
+
+            row.UpdateFrom(st, saveReqAgo, saveRxAgo);
         }
 
         for (int i = _players.Count - 1; i >= 0; i--)
@@ -199,8 +238,29 @@ public partial class MainWindow : Window
             {
                 _players.RemoveAt(i);
                 _rowsByPid.Remove(row.Pid);
+                _forceSyncPressedByPid.Remove(row.Pid);
+                _lastSaveRequestUtcByPid.Remove(row.Pid);
             }
         }
+    }
+
+    private static string FormatAgo(DateTime nowUtc, DateTime? utc)
+    {
+        if (utc == null)
+        {
+            return "--:--";
+        }
+
+        TimeSpan span = nowUtc - utc.Value;
+        if (span < TimeSpan.Zero)
+        {
+            span = TimeSpan.Zero;
+        }
+
+        int totalSeconds = (int)span.TotalSeconds;
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+        return $"{minutes:00}:{seconds:00}";
     }
 
     private void SendRubySnapshot()
@@ -330,6 +390,8 @@ public partial class MainWindow : Window
         private uint _seq;
         private string _keysMask = "0x0000000000000000";
         private string _lastSeen = "";
+        private string _saveReqAgo = "--:--";
+        private string _saveRxAgo = "--:--";
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -370,13 +432,27 @@ public partial class MainWindow : Window
             private set => SetField(ref _lastSeen, value, nameof(LastSeen));
         }
 
-        public void UpdateFrom(PlayerState st)
+        public string SaveReqAgo
+        {
+            get => _saveReqAgo;
+            private set => SetField(ref _saveReqAgo, value, nameof(SaveReqAgo));
+        }
+
+        public string SaveRxAgo
+        {
+            get => _saveRxAgo;
+            private set => SetField(ref _saveRxAgo, value, nameof(SaveRxAgo));
+        }
+
+        public void UpdateFrom(PlayerState st, string saveReqAgo, string saveRxAgo)
         {
             Name = st.Name ?? "";
             Npc = st.Npc;
             Seq = st.Seq;
             KeysMask = $"0x{st.KeysMask:X16}";
             LastSeen = st.LastSeenUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            SaveReqAgo = saveReqAgo;
+            SaveRxAgo = saveRxAgo;
         }
 
         private void SetField<T>(ref T field, T value, string propertyName)

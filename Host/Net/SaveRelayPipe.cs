@@ -16,6 +16,7 @@ public sealed class SaveRelayPipe : IDisposable
     private long _receivedChunks;
     private int _lastBytes;
     private int _readInProgress;
+    private long _lastRxUtcTicks;
 
     private static readonly byte[] Magic = Encoding.ASCII.GetBytes("LCOS");
     private const byte Version = 1;
@@ -41,6 +42,24 @@ public sealed class SaveRelayPipe : IDisposable
         var p = _pipe;
         bool connected = p != null && p.IsConnected;
         return (_receivedChunks, _lastBytes, connected);
+    }
+
+    public DateTime? GetLastRxUtc()
+    {
+        long ticks = Interlocked.Read(ref _lastRxUtcTicks);
+        if (ticks <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return new DateTime(ticks, DateTimeKind.Utc);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public void Dispose()
@@ -139,6 +158,7 @@ public sealed class SaveRelayPipe : IDisposable
             uint offset = BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(13, 4));
             int chunkLen = frame.Length - 17;
 
+            Interlocked.Exchange(ref _lastRxUtcTicks, DateTime.UtcNow.Ticks);
             byte[] chunk = Array.Empty<byte>();
             if (chunkLen > 0)
             {
@@ -166,4 +186,3 @@ public sealed class SaveRelayPipe : IDisposable
         }
     }
 }
-

@@ -39,6 +39,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<string> _events = new();
     private readonly ObservableCollection<KeyBindingRow> _bindings = new();
     private readonly DispatcherTimer _sendTimer;
+    private readonly DispatcherTimer _autoSyncTimer = new();
     private readonly Dictionary<int, int> _keyBitByVKey = new();
 
     private KeyBindingRow? _pendingBind;
@@ -132,10 +133,14 @@ public partial class MainWindow : Window
         _sendTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         _sendTimer.Tick += SendTimer_Tick;
 
+        _autoSyncTimer.Interval = TimeSpan.FromSeconds(30);
+        _autoSyncTimer.Tick += AutoSyncTimer_Tick;
+
         SourceInitialized += (_, __) => InitRawInput();
         Closed += (_, __) =>
         {
             _source?.RemoveHook(WndProc);
+            _autoSyncTimer.Stop();
             DisconnectInternal("disconnected");
         };
     }
@@ -176,6 +181,93 @@ public partial class MainWindow : Window
             _pendingBind = row;
             BindStatusText.Text = $"Нажмите клавишу для: {row.Action}";
         }
+    }
+
+    private void BindingsGrid_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        // DataGrid eats MouseWheel, which makes the outer ScrollViewer feel "stuck".
+        // Forward wheel scrolling to the root ScrollViewer.
+        if (RootScrollViewer == null)
+        {
+            return;
+        }
+
+        double next = RootScrollViewer.VerticalOffset - e.Delta;
+        if (next < 0)
+        {
+            next = 0;
+        }
+        if (next > RootScrollViewer.ScrollableHeight)
+        {
+            next = RootScrollViewer.ScrollableHeight;
+        }
+
+        RootScrollViewer.ScrollToVerticalOffset(next);
+        e.Handled = true;
+    }
+
+    private void AutoSyncCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        UpdateAutoSyncIntervalFromUi();
+
+        if (AutoSyncCheck != null && AutoSyncCheck.IsChecked == true)
+        {
+            _autoSyncTimer.Start();
+            UiLog($"{DateTime.Now:HH:mm:ss.fff} AutoSync enabled ({_autoSyncTimer.Interval.TotalSeconds:0}s)");
+        }
+        else
+        {
+            _autoSyncTimer.Stop();
+            UiLog($"{DateTime.Now:HH:mm:ss.fff} AutoSync disabled");
+        }
+    }
+
+    private void AutoSyncIntervalBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        UpdateAutoSyncIntervalFromUi();
+    }
+
+    private void UpdateAutoSyncIntervalFromUi()
+    {
+        if (AutoSyncIntervalBox == null)
+        {
+            return;
+        }
+
+        if (!int.TryParse(AutoSyncIntervalBox.Text.Trim(), out int seconds))
+        {
+            return;
+        }
+
+        seconds = Math.Clamp(seconds, 1, 3600);
+        _autoSyncTimer.Interval = TimeSpan.FromSeconds(seconds);
+    }
+
+    private void AutoSyncTimer_Tick(object? sender, EventArgs e)
+    {
+        // Auto-trigger the same ForceSync pulse the user can request with a key.
+        if (_stream == null || _netCts == null || !_handshakeDone)
+        {
+            return;
+        }
+
+        // Don't spam if the ForceSync key is currently held or a pulse is already active.
+        ulong mask = 1UL << ForceSyncBit;
+        if ((_keysMask & mask) != 0)
+        {
+            return;
+        }
+
+        long nowTicks = DateTime.UtcNow.Ticks;
+        long untilTicks = Interlocked.Read(ref _forceSyncPulseUntilUtcTicks);
+        if (untilTicks != 0 && nowTicks < untilTicks)
+        {
+            return;
+        }
+
+        long until = DateTime.UtcNow.Add(ForceSyncPulseDuration).Ticks;
+        Interlocked.Exchange(ref _forceSyncPulseUntilUtcTicks, until);
+        UiLog($"{DateTime.Now:HH:mm:ss.fff} ForceSync requested (bit {ForceSyncBit})");
     }
 
     private void GameRootBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -930,7 +1022,7 @@ public partial class MainWindow : Window
         {
             long until = DateTime.UtcNow.Add(ForceSyncPulseDuration).Ticks;
             Interlocked.Exchange(ref _forceSyncPulseUntilUtcTicks, until);
-            AppendEvent($"{DateTime.Now:HH:mm:ss.fff} ForceSync requested (bit {ForceSyncBit})");
+            UiLog($"{DateTime.Now:HH:mm:ss.fff} ForceSync requested (bit {ForceSyncBit})");
         }
     }
 

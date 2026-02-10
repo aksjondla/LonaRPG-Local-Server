@@ -22,6 +22,7 @@
             <TextBox x:Name="PortBox" Width="80" Margin="8,0,16,0" Text="50123" IsReadOnly="True"/>
             <TextBlock Text="Pipe:" VerticalAlignment="Center"/>
             <TextBox x:Name="PipeNameBox" Width="140" Margin="8,0,16,0" Text="LCOInput" IsReadOnly="True"/>
+            <TextBlock Text="Help?" VerticalAlignment="Center" Margin="0,0,6,0" Opacity="0.8"/>
             <Button x:Name="TelegramButton" Padding="4" Margin="0,0,8,0" Click="OnTelegramClick"
                     Background="Transparent" BorderBrush="{x:Null}" ToolTip="Telegram">
                 <Image Width="16" Height="16" Stretch="Uniform" Source="Assets/telegram.png"/>
@@ -51,8 +52,17 @@
                 <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="160"/>
                 <DataGridTextColumn Header="Npc" Binding="{Binding Npc}" Width="60"/>
                 <DataGridTextColumn Header="Seq" Binding="{Binding Seq}" Width="90"/>
+                <DataGridTextColumn Header="Save Req" Binding="{Binding SaveReqAgo}" Width="80"/>
+                <DataGridTextColumn Header="Save Rx" Binding="{Binding SaveRxAgo}" Width="80"/>
                 <DataGridTextColumn Header="KeysMask" Binding="{Binding KeysMask}" Width="180"/>
                 <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen}" Width="180"/>
+                <DataGridTemplateColumn Header="" Width="110">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="Отключить" Padding="8,2" Click="DisablePlayerButton_Click"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
 

@@ -143,6 +143,33 @@ public sealed class TcpHostServer
         }
     }
 
+    public bool DisconnectPlayer(ushort pid, bool removePlayer)
+    {
+        bool any = false;
+        foreach (var s in _sessions.Keys)
+        {
+            if (!s.HandshakeDone)
+            {
+                continue;
+            }
+
+            if (s.AssignedPid != pid)
+            {
+                continue;
+            }
+
+            any = true;
+            s.RequestClose();
+        }
+
+        if (removePlayer)
+        {
+            _players.TryRemove(pid, out _);
+        }
+
+        return any;
+    }
+
     public IReadOnlyCollection<PlayerState> SnapshotPlayers()
         => _players.Values.ToArray();
 

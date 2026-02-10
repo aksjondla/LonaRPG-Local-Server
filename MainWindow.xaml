@@ -7,7 +7,8 @@
         mc:Ignorable="d"
         Title="Raw Input Receiver" Height="520" Width="900" MinHeight="420" MinWidth="720"
         Background="{StaticResource Brush.WindowBg}">
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+    <ScrollViewer x:Name="RootScrollViewer"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                   Background="{StaticResource Brush.WindowBg}">
         <Grid Margin="16">
             <Grid.RowDefinitions>
@@ -38,6 +39,7 @@
                     <TextBlock Text="Companion:" VerticalAlignment="Center"/>
                     <RadioButton x:Name="NpcFrontRadio" Content="Front" GroupName="NpcSelect" Margin="8,0,0,0" IsChecked="True"/>
                     <RadioButton x:Name="NpcBackRadio" Content="Back" GroupName="NpcSelect" Margin="8,0,12,0"/>
+                    <TextBlock Text="Help?" VerticalAlignment="Center" Margin="0,0,6,0" Opacity="0.8"/>
                     <Button x:Name="TelegramButton" Padding="4" Margin="0,0,8,0" Click="OnTelegramClick"
                             Background="Transparent" BorderBrush="{x:Null}" ToolTip="Telegram">
                         <Image Width="16" Height="16" Stretch="Uniform" Source="Assets/telegram.png"/>
@@ -54,6 +56,20 @@
                              TextChanged="GameRootBox_TextChanged"
                              ToolTip="Путь к папке игры (LonaRPG). Нужен для сохранений (SavQuick)."/>
                     <Button x:Name="BrowseGameButton" Content="Browse" Padding="12,4" Click="BrowseGameButton_Click"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
+                    <CheckBox x:Name="AutoSyncCheck"
+                              Content="Автосинхронизация сейва"
+                              VerticalAlignment="Center"
+                              Checked="AutoSyncCheck_Changed"
+                              Unchecked="AutoSyncCheck_Changed"/>
+                    <TextBlock Text="Интервал (сек):" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                    <TextBox x:Name="AutoSyncIntervalBox"
+                             Width="80"
+                             Margin="8,0,0,0"
+                             Text="30"
+                             TextChanged="AutoSyncIntervalBox_TextChanged"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
@@ -82,10 +98,19 @@
                 <DataGrid x:Name="BindingsGrid"
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
+                          PreviewMouseWheel="BindingsGrid_PreviewMouseWheel"
                           HeadersVisibility="Column"
+                          CanUserResizeColumns="False"
                           CanUserResizeRows="False"
+                          CanUserReorderColumns="False"
+                          CanUserSortColumns="False"
+                          RowHeaderWidth="0"
+                          BorderThickness="0"
                           GridLinesVisibility="None"
                           RowHeight="28"
+                          Background="Transparent"
+                          ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                           MinHeight="140">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Действие" Binding="{Binding Action}" Width="*"/>

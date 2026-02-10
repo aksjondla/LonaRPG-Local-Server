@@ -29,6 +29,17 @@ public sealed class ClientSession
         RemoteEndPoint = (IPEndPoint)_client.Client.RemoteEndPoint!;
     }
 
+    public void RequestClose()
+    {
+        try
+        {
+            _client.Close();
+        }
+        catch
+        {
+        }
+    }
+
     public async Task RunAsync(CancellationToken ct)
     {
         try
