@@ -17,6 +17,8 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Windows.Navigation;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Win32;
 
 namespace Client;
@@ -26,6 +28,17 @@ namespace Client;
 /// </summary>
 public partial class MainWindow : Window
 {
+    private const string SettingsFileName = "client.settings.json";
+    private static readonly JsonSerializerOptions SettingsJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        WriteIndented = true
+    };
+
     private const int WM_INPUT = 0x00FF;
     private const uint RID_INPUT = 0x10000003;
     private const int RIM_TYPEKEYBOARD = 1;
@@ -40,9 +53,11 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<KeyBindingRow> _bindings = new();
     private readonly DispatcherTimer _sendTimer;
     private readonly DispatcherTimer _autoSyncTimer = new();
+    private readonly DispatcherTimer _settingsSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly Dictionary<int, int> _keyBitByVKey = new();
 
     private KeyBindingRow? _pendingBind;
+    private bool _loadingSettings;
 
     private HwndSource? _source;
 
@@ -80,6 +95,26 @@ public partial class MainWindow : Window
     private FileStream? _saveAsmStream;
     private string? _saveAsmTmpPath;
     private string? _saveAsmFinalPath;
+
+    private sealed class ClientSettings
+    {
+        public int Version { get; set; } = 1;
+        public string? Host { get; set; }
+        public int? Port { get; set; }
+        public string? Name { get; set; }
+        public ushort? CompanionNpcId { get; set; }
+        public string? GameRoot { get; set; }
+        public bool? AutoSyncEnabled { get; set; }
+        public int? AutoSyncIntervalSeconds { get; set; }
+        public List<KeyBindingSetting>? Bindings { get; set; }
+    }
+
+    private sealed class KeyBindingSetting
+    {
+        public string? Action { get; set; }
+        public int Bit { get; set; }
+        public int VKey { get; set; }
+    }
 
     private sealed class KeyBindingRow : INotifyPropertyChanged
     {
@@ -136,13 +171,212 @@ public partial class MainWindow : Window
         _autoSyncTimer.Interval = TimeSpan.FromSeconds(30);
         _autoSyncTimer.Tick += AutoSyncTimer_Tick;
 
+        _settingsSaveTimer.Tick += (_, __) =>
+        {
+            _settingsSaveTimer.Stop();
+            SaveSettingsNow();
+        };
+
+        // Persist settings on edits (IP/name/game path, keybind changes, autosync).
+        HostBox.TextChanged += (_, __) => ScheduleSaveSettings();
+        NameBox.TextChanged += (_, __) => ScheduleSaveSettings();
+        NpcFrontRadio.Checked += (_, __) => ScheduleSaveSettings();
+        NpcBackRadio.Checked += (_, __) => ScheduleSaveSettings();
+
+        TryLoadSettings();
+
         SourceInitialized += (_, __) => InitRawInput();
         Closed += (_, __) =>
         {
+            _settingsSaveTimer.Stop();
+            SaveSettingsNow();
             _source?.RemoveHook(WndProc);
             _autoSyncTimer.Stop();
             DisconnectInternal("disconnected");
         };
+    }
+
+    private static string GetSettingsPath()
+    {
+        return Path.Combine(AppContext.BaseDirectory, SettingsFileName);
+    }
+
+    private void ScheduleSaveSettings()
+    {
+        if (_loadingSettings)
+        {
+            return;
+        }
+
+        _settingsSaveTimer.Stop();
+        _settingsSaveTimer.Start();
+    }
+
+    private void SaveSettingsNow()
+    {
+        if (_loadingSettings)
+        {
+            return;
+        }
+
+        try
+        {
+            var settings = CaptureSettingsFromUi();
+            string path = GetSettingsPath();
+            string tmp = path + ".tmp";
+            string json = JsonSerializer.Serialize(settings, SettingsJsonOptions);
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+        }
+    }
+
+    private void TryLoadSettings()
+    {
+        string path = GetSettingsPath();
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            string json = File.ReadAllText(path);
+            var settings = JsonSerializer.Deserialize<ClientSettings>(json, SettingsJsonOptions);
+            if (settings == null)
+            {
+                return;
+            }
+            ApplySettingsToUi(settings);
+        }
+        catch
+        {
+        }
+    }
+
+    private ClientSettings CaptureSettingsFromUi()
+    {
+        int intervalSeconds = (int)(_autoSyncTimer.Interval.TotalSeconds);
+        if (AutoSyncIntervalBox != null && int.TryParse(AutoSyncIntervalBox.Text.Trim(), out int sec))
+        {
+            intervalSeconds = Math.Clamp(sec, 1, 3600);
+        }
+
+        int? port = null;
+        if (PortBox != null && int.TryParse(PortBox.Text.Trim(), out int p) && p is > 0 and <= 65535)
+        {
+            port = p;
+        }
+
+        var binds = new List<KeyBindingSetting>(_bindings.Count);
+        foreach (var row in _bindings)
+        {
+            binds.Add(new KeyBindingSetting
+            {
+                Action = row.Action,
+                Bit = row.Bit,
+                VKey = row.VKey
+            });
+        }
+
+        return new ClientSettings
+        {
+            Host = HostBox?.Text.Trim(),
+            Port = port,
+            Name = NameBox?.Text.Trim(),
+            CompanionNpcId = GetNpcIdFromUi(),
+            GameRoot = GameRootBox?.Text.Trim(),
+            AutoSyncEnabled = AutoSyncCheck?.IsChecked == true,
+            AutoSyncIntervalSeconds = intervalSeconds,
+            Bindings = binds
+        };
+    }
+
+    private void ApplySettingsToUi(ClientSettings settings)
+    {
+        _loadingSettings = true;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(settings.Host))
+            {
+                HostBox.Text = settings.Host.Trim();
+            }
+
+            if (settings.Port.HasValue && settings.Port.Value is > 0 and <= 65535)
+            {
+                PortBox.Text = settings.Port.Value.ToString();
+            }
+
+            if (!string.IsNullOrWhiteSpace(settings.Name))
+            {
+                NameBox.Text = settings.Name.Trim();
+            }
+
+            if (settings.CompanionNpcId == 2)
+            {
+                NpcBackRadio.IsChecked = true;
+            }
+            else if (settings.CompanionNpcId == 1)
+            {
+                NpcFrontRadio.IsChecked = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(settings.GameRoot))
+            {
+                GameRootBox.Text = settings.GameRoot.Trim();
+                _gameRoot = settings.GameRoot.Trim();
+            }
+
+            if (settings.AutoSyncIntervalSeconds.HasValue && settings.AutoSyncIntervalSeconds.Value > 0)
+            {
+                int sec = Math.Clamp(settings.AutoSyncIntervalSeconds.Value, 1, 3600);
+                AutoSyncIntervalBox.Text = sec.ToString();
+                _autoSyncTimer.Interval = TimeSpan.FromSeconds(sec);
+            }
+
+            if (settings.AutoSyncEnabled.HasValue)
+            {
+                AutoSyncCheck.IsChecked = settings.AutoSyncEnabled.Value;
+            }
+
+            if (settings.Bindings != null)
+            {
+                foreach (var b in settings.Bindings)
+                {
+                    if (b == null)
+                    {
+                        continue;
+                    }
+                    if (b.VKey <= 0 || b.VKey == 0xFF)
+                    {
+                        continue;
+                    }
+                    var row = FindBindingRowByBit(b.Bit);
+                    if (row != null)
+                    {
+                        ApplyBinding(row, b.VKey, scheduleSave: false);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _loadingSettings = false;
+        }
+    }
+
+    private KeyBindingRow? FindBindingRowByBit(int bit)
+    {
+        foreach (var row in _bindings)
+        {
+            if (row.Bit == bit)
+            {
+                return row;
+            }
+        }
+        return null;
     }
 
     private void ClearButton_Click(object sender, RoutedEventArgs e)
@@ -213,18 +447,27 @@ public partial class MainWindow : Window
         if (AutoSyncCheck != null && AutoSyncCheck.IsChecked == true)
         {
             _autoSyncTimer.Start();
-            UiLog($"{DateTime.Now:HH:mm:ss.fff} AutoSync enabled ({_autoSyncTimer.Interval.TotalSeconds:0}s)");
+            if (!_loadingSettings)
+            {
+                UiLog($"{DateTime.Now:HH:mm:ss.fff} AutoSync enabled ({_autoSyncTimer.Interval.TotalSeconds:0}s)");
+            }
         }
         else
         {
             _autoSyncTimer.Stop();
-            UiLog($"{DateTime.Now:HH:mm:ss.fff} AutoSync disabled");
+            if (!_loadingSettings)
+            {
+                UiLog($"{DateTime.Now:HH:mm:ss.fff} AutoSync disabled");
+            }
         }
+
+        ScheduleSaveSettings();
     }
 
     private void AutoSyncIntervalBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         UpdateAutoSyncIntervalFromUi();
+        ScheduleSaveSettings();
     }
 
     private void UpdateAutoSyncIntervalFromUi()
@@ -273,6 +516,7 @@ public partial class MainWindow : Window
     private void GameRootBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         _gameRoot = GameRootBox.Text.Trim();
+        ScheduleSaveSettings();
     }
 
     private void BrowseGameButton_Click(object sender, RoutedEventArgs e)
@@ -1137,6 +1381,11 @@ public partial class MainWindow : Window
 
     private void ApplyBinding(KeyBindingRow row, int vkey)
     {
+        ApplyBinding(row, vkey, scheduleSave: true);
+    }
+
+    private void ApplyBinding(KeyBindingRow row, int vkey, bool scheduleSave)
+    {
         if (vkey <= 0 || vkey == 0xFF)
         {
             return;
@@ -1152,6 +1401,10 @@ public partial class MainWindow : Window
 
         row.SetVKey(vkey);
         RebuildKeyMap();
+        if (scheduleSave)
+        {
+            ScheduleSaveSettings();
+        }
     }
 
     private void RebuildKeyMap()
