@@ -33,6 +33,8 @@ public partial class MainWindow : Window
     private const uint RIDEV_INPUTSINK = 0x00000100;
 
     private const ushort DefaultDesiredPid = 0;
+    private const int ForceSyncBit = 63;
+    private static readonly TimeSpan ForceSyncPulseDuration = TimeSpan.FromMilliseconds(600);
 
     private readonly ObservableCollection<string> _events = new();
     private readonly ObservableCollection<KeyBindingRow> _bindings = new();
@@ -56,6 +58,10 @@ public partial class MainWindow : Window
     private Task? _camPipeTxTask;
 
     private volatile string _gameRoot = "";
+    private long _forceSyncPulseUntilUtcTicks;
+    private uint _lastSaveRxSeqLogged;
+    private uint _lastSaveDoneSeqLogged;
+    private long _lastGameRootMissingLogUtcTicks;
 
     private const string ViewerCamPipeName = "LCOCam";
     private NamedPipeClientStream? _camPipe;
@@ -390,6 +396,12 @@ public partial class MainWindow : Window
         }
 
         ulong keysMask = _keysMask;
+
+        long untilTicks = Interlocked.Read(ref _forceSyncPulseUntilUtcTicks);
+        if (untilTicks != 0 && DateTime.UtcNow.Ticks < untilTicks)
+        {
+            keysMask |= 1UL << ForceSyncBit;
+        }
         uint seq = ++_seq;
 
         byte[] payload = new byte[2 + 2 + 4 + 8];
@@ -642,6 +654,13 @@ public partial class MainWindow : Window
         string gameRoot = _gameRoot;
         if (string.IsNullOrWhiteSpace(gameRoot))
         {
+            long nowTicks = DateTime.UtcNow.Ticks;
+            long prev = Interlocked.Read(ref _lastGameRootMissingLogUtcTicks);
+            if (prev == 0 || (nowTicks - prev) > TimeSpan.FromSeconds(2).Ticks)
+            {
+                Interlocked.Exchange(ref _lastGameRootMissingLogUtcTicks, nowTicks);
+                UiLog($"{DateTime.Now:HH:mm:ss.fff} Save rx ignored (seq={saveSeq}) because Game path is empty");
+            }
             return;
         }
 
@@ -663,6 +682,12 @@ public partial class MainWindow : Window
             }
             catch
             {
+            }
+
+            if (saveSeq != _lastSaveRxSeqLogged)
+            {
+                _lastSaveRxSeqLogged = saveSeq;
+                UiLog($"{DateTime.Now:HH:mm:ss.fff} Save rx start seq={saveSeq} total={totalLen} -> {finalPath}");
             }
 
             Directory.CreateDirectory(userDataDir);
@@ -733,10 +758,16 @@ public partial class MainWindow : Window
                     catch
                     {
                     }
+
+                    if (saveSeq != _lastSaveDoneSeqLogged)
+                    {
+                        _lastSaveDoneSeqLogged = saveSeq;
+                        UiLog($"{DateTime.Now:HH:mm:ss.fff} Save rx done seq={saveSeq} bytes={totalLen}");
+                    }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ignore; viewer will keep trying next save_seq
+                    UiLog($"{DateTime.Now:HH:mm:ss.fff} Save rx finalize failed: {ex.Message}");
                 }
             }
 
@@ -883,6 +914,7 @@ public partial class MainWindow : Window
         }
 
         ulong mask = 1UL << bit;
+        bool wasDown = (_keysMask & mask) != 0;
         if (isUp)
         {
             _keysMask &= ~mask;
@@ -891,12 +923,37 @@ public partial class MainWindow : Window
         {
             _keysMask |= mask;
         }
+
+        // Force Sync is a one-shot action. Latch it for a short duration so a fast
+        // tap isn't missed by the 16ms network tick.
+        if (bit == ForceSyncBit && !isUp && !wasDown)
+        {
+            long until = DateTime.UtcNow.Add(ForceSyncPulseDuration).Ticks;
+            Interlocked.Exchange(ref _forceSyncPulseUntilUtcTicks, until);
+            AppendEvent($"{DateTime.Now:HH:mm:ss.fff} ForceSync requested (bit {ForceSyncBit})");
+        }
     }
 
     private void AppendEvent(string message)
     {
         _events.Add(message);
         ScrollEventsToEndIfPinned();
+    }
+
+    private void UiLog(string message)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            LastEventText.Text = message;
+            AppendEvent(message);
+            return;
+        }
+
+        _ = Dispatcher.InvokeAsync(() =>
+        {
+            LastEventText.Text = message;
+            AppendEvent(message);
+        });
     }
 
     private ushort GetNpcIdFromUi()
@@ -977,6 +1034,7 @@ public partial class MainWindow : Window
         AddBinding("Skill 6", 13, 0x32); // 2
         AddBinding("Skill Grab", 14, 0x33); // 3
         AddBinding("Cycle Companion", 15, 0x34); // 4
+        AddBinding("Force Sync", 63, 0x78); // F9
         RebuildKeyMap();
     }
 
